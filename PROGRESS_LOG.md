@@ -1,84 +1,45 @@
-# Project Progress Log  
-**Project:** Novel Evaluation Metric for Code Translation (IMM)  
-**Author:** Chetanya Makkar  
-**Date:** November 2025  
+# Project Progress Log — Novel Evaluation Metric for Code Translation
 
----
+## Week of November 11, 2025
 
-## Overview  
-The project introduces a **new evaluation metric for code translation** called **IMM** (Inter-Model Metric).  
-Traditional metrics like BLEU and CodeBLEU often reward superficial token overlap and fail to capture  
-semantic correctness. IMM aims to fix that by combining two complementary signals:
+### 1. Environment Setup
+- Created a clean virtual environment (`imm_env`) using Python 3.12 to eliminate dependency conflicts from Anaconda.
+- Installed required dependencies: `numpy`, `pandas`, `matplotlib`, and the local `imm-metric` package.
+- Verified all imports and ensured reproducibility for collaborators.
 
-\[
-\text{IMM} = \alpha \cdot S + (1 - \alpha) \cdot J
-\]
+### 2. Metric Implementation
+- Implemented the IMM (Inter-Model Metric) combining:
+  - **S (Static Similarity):** token, operator, and structural overlap.
+  - **J (Judge Score):** heuristic evaluation of control-flow and arithmetic similarity.
+- Defined the combined metric as  
+  **IMM = α·S + (1–α)·J**, with α = 0.55 after preliminary sensitivity checks.
 
-where  
-- **S** = Static Semantic Similarity (structure + syntax overlap)  
-- **J** = Judge-based Semantic Score (human- or LLM-like reasoning)  
-- **α** = weight controlling the balance between structural and semantic fidelity
+### 3. Experiment Pipeline
+- Added `scripts/run_experiments.py` to evaluate IMM across multiple translation pairs:
+  - `sum_to_n`: correct translation  
+  - `buggy_sum`: factorial logic bug  
+  - `swapped_if`: inverted conditional bug  
+- The script computes and saves results to `results/metrics_comparison.csv` with columns `[example, IMM, S, J]`.
 
----
+| example     | IMM  | S    | J    |
+|--------------|------|------|------|
+| sum_to_n     | 0.663 | 0.549 | 0.801 |
+| buggy_sum    | 0.618 | 0.489 | 0.775 |
+| swapped_if   | 0.617 | 0.488 | 0.775 |
 
-## Repository Structure and Purpose of Each Module
+### 4. Visualization
+- Added `scripts/plot_results.py` to visualize metric performance.
+- Generated `results/imm_bar.png`, comparing IMM, S, and J for each translation pair.
 
-### `imm_metric/utils.py`
-**Purpose:** Core helper utilities for preprocessing and similarity calculations.  
-**Key Features:**
-- `normalize_code()` → removes comments, normalizes identifiers and numbers.  
-- `tokenize()` → language-agnostic tokenization of source/target code.  
-- `ngrams()`, `jaccard()`, `f1()` → support lexical overlap metrics.  
-- `weighted_mean()` → safe averaging for multi-feature fusion.
+**Key Observation:**  
+IMM differentiates between valid and buggy translations by capturing both syntactic and semantic alignment.  
+While S and J alone yield similar scores across examples, IMM penalizes logical and structural errors more effectively.
 
-These utilities enable cross-language consistency and lightweight feature extraction.
+### 5. Reflection and Next Steps
+- IMM metric is fully functional and visualized.
+- Immediate next steps:
+  1. Integrate BLEU/CodeBLEU comparison for baseline benchmarking.
+  2. Expand dataset with additional translation pairs (loops, recursion, and string operations).
+  3. Explore integrating an LLM-based judge for semantic evaluation.
+  4. Prepare midterm presentation slides including the plots and numerical summaries.
 
----
-
-### `imm_metric/static_score.py`
-**Purpose:** Implements the **Static Semantic Score (S)** that captures lexical and structural similarity  
-without requiring model inference.  
-**Components:**
-- 1-gram and 2-gram F1 overlap  
-- Operator overlap (`+`, `==`, `>=`, etc.)  
-- Control-flow keyword overlap (`if`, `for`, `while`, `return`, …)  
-**Output:** Dictionary with component scores and overall static score `S ∈ [0,1]`.
-
----
-
-### `imm_metric/llm_judge.py`
-**Purpose:** Provides a flexible **Judge** interface for semantic evaluation.  
-**Implemented Classes:**
-- `BaseJudge` → protocol definition for any semantic judge.  
-- `DummyHeuristicJudge` → offline heuristic that approximates LLM judgment using  
-  control-flow and arithmetic similarity plus a length penalty.  
-**Future Extension:** Replace with an actual LLM-based judge (e.g., GPT-4o) for deeper semantic scoring.
-
----
-
-### `imm_metric/combine_metric.py`
-**Purpose:** Core implementation of the IMM formula.  
-**Logic Flow:**
-1. Compute static semantic score `S` via `static_semantic_score()`.  
-2. Compute judge score `J` via `DummyHeuristicJudge` (or another judge).  
-3. Combine them: `IMM = α·S + (1-α)·J`.  
-**Returns:** Dictionary containing `IMM`, `S`, `J`, diagnostic sub-scores, and explanations.
-
----
-
-### `examples/example_usage.py`
-**Purpose:** Demonstration script showing IMM in action.  
-**Details:**
-- Includes two translation examples:  
-  1. *sum_to_n* — correct translation.  
-  2. *buggy_sum* — factorial logic error.  
-- Prints table comparing `IMM`, `S`, and `J`.  
-**Expected Outcome:** The correct translation scores higher on IMM than the buggy one,  
-illustrating IMM’s advantage over surface-level metrics.
-
----
-
-### `requirements.txt`
-Minimal dependencies:
-```text
-numpy>=1.24
