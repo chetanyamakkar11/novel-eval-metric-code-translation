@@ -1,46 +1,91 @@
-"""
-Judge interface. By default we provide DummyHeuristicJudge so the project runs
-offline. Later you can swap in an LLM-based judge that returns J∈[0,1].
-"""
-from __future__ import annotations
-from dataclasses import dataclass
-from typing import Protocol, Dict
-from .utils import normalize_code, tokenize, jaccard, weighted_mean
+# imm_metric/llm_judge.py
 
-class BaseJudge(Protocol):
-    def score(self, src_code: str, trg_code: str, prompt: str | None = None) -> Dict[str, float]:
-        """Return {'J': float, 'explan': str} with J in [0,1]."""
+import os
+import json
+from openai import OpenAI
+client = OpenAI()
 
-@dataclass
-class DummyHeuristicJudge:
+
+
+class BaseJudge:
+    """Abstract judge class. All judges must implement score()."""
+
+    def score(self, source_code: str, target_code: str) -> float:
+        raise NotImplementedError("Subclasses must implement this method.")
+
+
+class DummyHeuristicJudge(BaseJudge):
     """
-    A lightweight, deterministic proxy for “semantic” judgment.
-    Heuristics:
-      - reward overlap of control-flow tokens & arithmetic symbols
-      - slight penalty if target is extremely short/long vs source
-    This is *not* a replacement for real human/LLM judgments, but lets us test IMM.
+    A lightweight heuristic judge used for testing.
+    Approximates 'J' without calling an LLM.
     """
-    length_tolerance: float = 0.5  # how much length ratio deviating hurts
-    ctrl_weight: float = 0.6
-    arith_weight: float = 0.4
 
-    def score(self, src_code: str, trg_code: str, prompt: str | None = None) -> Dict[str, float]:
-        s, t = tokenize(normalize_code(src_code)), tokenize(normalize_code(trg_code))
-        ctrl = {"if","else","for","while","return","switch","case","try","catch","finally"}
-        arith = {"+","-","*","/","%","==","!=",">=","<=","<",">"}
+    def score(self, source_code: str, target_code: str) -> float:
+        score = 1.0
 
-        ctrl_sim = jaccard([x for x in s if x in ctrl], [x for x in t if x in ctrl])
-        arith_sim = jaccard([x for x in s if x in arith], [x for x in t if x in arith])
-        base = weighted_mean([ctrl_sim, arith_sim], [self.ctrl_weight, self.arith_weight])
+        # Heuristic penalty if translation has unused imports
+        if "import" in target_code and "(" not in source_code:
+            score -= 0.1
 
-        # length ratio penalty
-        lr = len(t) / max(1, len(s))
-        penalty = max(0.0, min(1.0, 1.0 - abs(lr - 1.0) / (1.0 + self.length_tolerance)))
+        # Penalize if code is much longer than original
+        if len(target_code) > len(source_code) * 1.5:
+            score -= 0.15
 
-        J = float(max(0.0, min(1.0, 0.2 + 0.8 * ((base + penalty) / 2.0))))
-        return {"J": J, "explan": f"ctrl={ctrl_sim:.2f}, arith={arith_sim:.2f}, len_penalty={penalty:.2f}"}
+        # Penalize messy formatting (very naive)
+        if "    " not in target_code:  # no indentation
+            score -= 0.1
 
-# (Optional) later: real LLM judge using your provider of choice.
-# class OpenAIJudge:
-#     def __init__(self, model="gpt-4o-mini", api_key=None): ...
-#     def score(self, src_code, trg_code, prompt=None) -> Dict[str, float]: ...
+        return max(0, min(score, 1))
+
+
+class OpenAILLMJudge(BaseJudge):
+    """
+    Real LLM judge using OpenAI API.
+    Returns a J (Judge) score between 0 and 1.
+    """
+
+    def __init__(self, model="gpt-4o-mini", rubric_path="scripts/docs/LLM_JUDGE_RUBRIC.md"
+):
+        self.model = model
+        OpenAI.api_key = os.getenv("OPENAI_API_KEY")
+
+        # Load judge rubric
+        with open(rubric_path, "r") as f:
+            self.rubric = f.read()
+
+    def score(self, source_code: str, target_code: str) -> float:
+        prompt = f"""
+You are evaluating translated code using the rubric below.
+
+RUBRIC:
+{self.rubric}
+
+Provide ONLY a JSON dictionary with:
+{{
+    "J_score": <a number from 0 to 1>
+}}
+
+SOURCE CODE:
+{source_code}
+
+TRANSLATED CODE:
+{target_code}
+"""
+
+        response = client.chat.completions.create(
+        model=self.model,
+        messages=[
+        {"role": "system", "content": self.rubric},
+        {"role": "user", "content": prompt},
+    ],
+    temperature=0,
+)
+
+
+        msg = response["choices"][0]["message"]["content"]
+
+        try:
+            data = json.loads(msg)
+            return float(data["J_score"])
+        except:
+            return 0.5

@@ -1,85 +1,47 @@
-"""
-run_experiments.py
-Runs IMM on multiple example code translation pairs and logs results to CSV.
-"""
-
+import json
 from imm_metric import IMMMetric
-import csv, os
+from imm_metric.llm_judge import OpenAILLMJudge, DummyHeuristicJudge
 
-# Define translation pairs (you can add more)
-pairs = [
-    {
-        "name": "sum_to_n",
-        "src": """
-        def sum_to_n(n):
-            s = 0
-            for i in range(1, n+1):
-                s += i
-            return s
-        """,
-        "trg": """
-        int sumToN(int n) {
-            int acc = 0;
-            for (int i = 1; i <= n; i++) {
-                acc = acc + i;
-            }
-            return acc;
-        }
-        """,
+# Example dataset
+DATASET = {
+    "sum_to_n": {
+        "source": "def sum_to_n(n): return sum(range(n+1))",
+        "target": "public int sumToN(int n){ int s=0; for(int i=0;i<=n;i++) s+=i; return s; }"
     },
-    {
-        "name": "buggy_sum",
-        "src": """
-        def sum_to_n(n):
-            s = 0
-            for i in range(1, n+1):
-                s += i
-            return s
-        """,
-        "trg": """
-        int sumToN(int n) {
-            int acc = 1;
-            for (int i = 1; i <= n; i++) {
-                acc = acc * i; // factorial bug
-            }
-            return acc;
-        }
-        """,
+    "buggy_sum": {
+        "source": "def sum_to_n(n): return sum(range(n+1))",
+        "target": "public int sumToN(int n){ return n*n; }"
     },
-    {
-        "name": "swapped_if",
-        "src": """
-        def abs_val(x):
-            if x < 0:
-                return -x
-            else:
-                return x
-        """,
-        "trg": """
-        int absVal(int x) {
-            if (x > 0) { // swapped condition bug
-                return -x;
-            } else {
-                return x;
-            }
-        }
-        """,
-    },
-]
+    "swapped_if": {
+        "source": "def sign(x): return 'pos' if x>0 else 'neg'",
+        "target": "public String sign(int x){ if(x>0) return \"neg\"; else return \"pos\"; }"
+    }
+}
 
-# Initialize metric
-metric = IMMMetric(alpha=0.55)
+def main():
+    # Choose judge mode:
+    # judge = DummyHeuristicJudge()   # No API calls (safe, fast)
+    judge = OpenAILLMJudge(model="gpt-4o-mini")  # Requires API key in environment
 
-os.makedirs("results", exist_ok=True)
-outpath = "results/metrics_comparison.csv"
+    imm = IMMMetric(alpha=0.5, judge=judge)
 
-# Run evaluation and save results
-with open(outpath, "w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(["example", "IMM", "S", "J"])
-    for ex in pairs:
-        res = metric.score(ex["src"], ex["trg"])
-        writer.writerow([ex["name"], res["IMM"], res["S"], res["J"]])
-        print(f"{ex['name']}: IMM={res['IMM']:.3f}, S={res['S']:.3f}, J={res['J']:.3f}")
+    results = {}
 
-print(f"\nResults saved to {outpath}")
+    for name, pair in DATASET.items():
+        out = imm.score(pair["source"], pair["target"])
+
+        results[name] = out
+
+        print(f"\n=== {name} ===")
+        print(f"S: {out['S']:.3f}")
+        print(f"J: {out['J']:.3f}")
+        print(f"IMM: {out['IMM']:.3f}")
+        print("Judge explanation:", out.get("J_explanation", ""))
+
+    with open("results/imm_full_results.json", "w") as f:
+        json.dump(results, f, indent=2)
+
+    print("\nSaved results to results/imm_full_results.json")
+
+if __name__ == "__main__":
+    main()

@@ -5,8 +5,14 @@ IMM = α·S + (1–α)·J   with α∈[0,1].
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
+
 from .static_score import static_semantic_score
-from .llm_judge import BaseJudge, DummyHeuristicJudge
+from .llm_judge import (
+    BaseJudge,
+    DummyHeuristicJudge,
+    OpenAILLMJudge
+)
+
 
 @dataclass
 class IMMMetric:
