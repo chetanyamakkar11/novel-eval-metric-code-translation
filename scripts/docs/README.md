@@ -1,133 +1,144 @@
-# IMM – A Novel Evaluation Metric for Code Translation
+# Novel Evaluation Metric for Code Translation (IMM Metric)
 
-This project introduces **IMM (Integrated Multi-Metric)**, a hybrid evaluation method
-for measuring *code translation quality* across programming languages. IMM combines:
+This repository implements IMM — a hybrid evaluation metric for assessing code translation quality across programming languages. IMM combines:
 
-1. **Static Semantic Score (S-score)** – deterministic, AST-normalized correctness approximation  
-2. **LLM-based Judgment (J-score)** – structured evaluation using a rubric  
-3. **Weighted Integration (IMM)** – tunable combination of S and J  
+1. S-score – A static, deterministic semantic similarity measure  
+2. J-score – A rubric-guided LLM judge score (OpenAI or local Ollama)  
+3. IMM-score – A weighted combination of both:  
+   IMM = α * S + (1 – α) * J
 
-IMM aims to bridge the gap between:
-- brittle string-matching metrics (BLEU, CodeBLEU), and  
-- subjective but powerful LLM-based evaluators.
-
-The goal is a metric that is **consistent, interpretable, reproducible**, and useful
-for evaluating real-world language-to-language code translation systems.
-
----
+The goal is to create a reliable, interpretable, and model-agnostic metric for evaluating code translation systems beyond BLEU or edit-distance-based approaches.
 
 ## Features
 
-### **1. Pass@k-Inspired Static Semantic Scoring**
-The static score uses:
-- AST parsing + canonicalization  
-- operator overlap  
-- keyword comparison  
-- structural similarity  
+### 1. Static Semantic Scoring (S-score)
+Implements deterministic similarity checks including:
+- Keyword and operator overlap  
+- Structural token similarity  
+- Basic semantic feature alignment  
+- Outputs a normalized 0–1 correctness score  
 
-Evaluated across **k perturbations** (default: 5) to reduce noise.
+Purpose: provide a stable, reproducible baseline independent of LLM variability.
 
-### **2. Local LLM Judge (Ollama)**
-The J-score is computed via a local model (e.g., *mistral*, *mixtral*, *phi3*) using
-a strict JSON rubric.
+### 2. LLM Judge Scoring (J-score)
+Supports two judge implementations:
 
-Benefits:
-- No API cost  
-- Deterministic prompts  
-- Aligned with human evaluation dimensions  
+#### OpenAILLMJudge
+Uses OpenAI models (e.g., gpt-4o-mini) with a structured rubric prompt to produce:
+- A 5-factor scoring breakdown
+- A final judge score
+- A natural-language explanation
 
-### **3. IMM Unified Score**
-IMM = α * S + (1 − α) * J
+#### OllamaJudge (local)
+Uses local models (e.g., mistral, llama3.1) and includes:
+- Strict JSON-only output prompting
+- Automatic JSON cleanup and fallback extraction
+- Full rubric-based score calculation
 
-yaml
-Copy code
+Rubric is stored in:
+docs/LLM_JUDGE_RUBRIC.md
 
-α is user-controlled based on how much weight to give semantic S-score vs.
-LLM-derived J-score.
+### 3. IMM Metric Combination
+IMMMetric merges static and learned evaluation signals. It returns:
+- Raw S-score  
+- Raw J-score  
+- Detailed J-breakdown  
+- Explanation text  
+- Final IMM hybrid score  
 
-### **4. Full Breakdown for Debugging**
-Each evaluation returns:
-- S-score  
-- J-score  
-- Full J-score breakdown across rubric categories  
-- Explanation from judge  
+### 4. Experiment Pipeline
+The script at scripts/run_experiments.py:
+- Loads example translation pairs  
+- Computes S, J, and IMM scores  
+- Prints results  
+- Saves JSON output to results/imm_full_results.json  
 
----
+This pipeline is easily extendable for larger datasets or model comparisons.
 
-## Repository Structure
+## Project Structure
+imm_metric/
+combine_metric.py
+static_score.py
+ollama_judge.py
+openai_judge.py
+init.py
 
-novel-eval-metric-code-translation/
-│
-├── imm_metric/
-│ ├── init.py
-│ ├── combine_metric.py # IMM core logic
-│ ├── static_score.py # pass@k static correctness scorer
-│ ├── ollama_judge.py # Local LLM-based judgment
-│ └── ...
-│
-├── scripts/
-│ ├── run_experiments.py # main experimentation driver
-│ ├── docs/
-│ │ └── LLM_JUDGE_RUBRIC.md # evaluation rubric
-│
-├── results/
-│ └── imm_full_results.json
-│
-└── README.md
+scripts/
+run_experiments.py
 
-yaml
-Copy code
+docs/
+LLM_JUDGE_RUBRIC.md
 
----
+results/
+imm_full_results.json
 
-## Running IMM Locally
 
-### 1. Install dependencies
+## Installation
 
-```bash
-pip install -e .
-pip install astor
-2. Install and pull an Ollama model
-bash
-Copy code
-brew install ollama
-ollama pull mistral
-3. Run experiments
-bash
-Copy code
+1. Clone the repository:
+   git clone https://github.com/chetanyamakkar11/novel-eval-metric-code-translation.git  
+   cd novel-eval-metric-code-translation
+
+2. Create a Python environment:
+   python3 -m venv imm_env  
+   source imm_env/bin/activate
+
+3. Install package:
+   pip install -e .
+
+4. (Optional) OpenAI judge:
+   pip install openai  
+   export OPENAI_API_KEY="your_key"
+
+5. (Optional) Ollama judge:
+   brew install ollama  
+   ollama pull mistral
+
+## Running Experiments
+
+Run:
 python scripts/run_experiments.py
-📊 Example Output
-yaml
-Copy code
+
+Example output:
 === sum_to_n ===
-S: 0.923
-J: 0.810
-IMM: 0.866
-J breakdown: { ... }
-Why IMM?
-Current code translation metrics fail in important ways:
+S: 0.92
+J: 0.81
+IMM: 0.86
+Judge Explanation: ...
 
-Metric	Fails At
-BLEU	counts tokens, ignores semantics
-CodeBLEU	improves but still brittle
-Execution Tests	can't always auto-generate inputs
-LLM Judge Alone	inconsistent across prompts/models
+Results are saved locally as JSON.
 
-IMM solves this by integrating deterministic structure-aware scoring with a
-rubric-driven qualitative judge, aimed at capturing human-like evaluation
-without losing reproducibility.
+## Example JSON Output
+{
+"sum_to_n": {
+"S": 0.92,
+"J": 0.81,
+"IMM": 0.86,
+"J_breakdown": {
+"functionality": 1.0,
+"semantic_alignment": 0.9,
+"idiomaticity": 0.7,
+"risk": 0.0
+},
+"explanation": "Target preserves full behavior..."
+}
+}
 
-Roadmap
-Execution-based behavioral testing
+## Future Work
+The next major milestone is the creation of a large, diverse dataset of code translation pairs
+to thoroughly evaluate IMM across languages and difficulty levels. This includes:
 
-Larger benchmark dataset of translation pairs
+- Expanding examples beyond toy programs
+- Curating real translation outputs from multiple LLMs
+- Evaluating IMM stability across datasets
+ 
 
-Inter-model consistency experiments (OpenAI vs Anthropic vs Ollama)
+## Summary
 
-Adversarial robustness scoring
+This project provides an interpretable hybrid metric for evaluating code translation quality. IMM unifies deterministic semantics with a rubric-aligned LLM judge to produce more reliable and meaningful evaluation scores than traditional string-based metrics. The system is modular, extendable, and supports both cloud-based and fully local LLM judging.
 
-Calibration of α for different translation tasks
+## Author
+Chetanya Makkar  
+University of Maryland  
 
-Author
-Chetanya Makkar
-University of Maryland
+
