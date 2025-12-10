@@ -1,8 +1,7 @@
 import json
 from imm_metric import IMMMetric
-from imm_metric.llm_judge import OpenAILLMJudge, DummyHeuristicJudge
+from imm_metric.ollama_judge import OllamaJudge
 
-# Example dataset
 DATASET = {
     "sum_to_n": {
         "source": "def sum_to_n(n): return sum(range(n+1))",
@@ -19,24 +18,19 @@ DATASET = {
 }
 
 def main():
-    # Choose judge mode:
-    # judge = DummyHeuristicJudge()   # No API calls (safe, fast)
-    judge = OpenAILLMJudge(model="gpt-4o-mini")  # Requires API key in environment
-
-    imm = IMMMetric(alpha=0.5, judge=judge)
+    judge = OllamaJudge(model="mistral")   # >>> local model
+    imm = IMMMetric(alpha=0.5, k=5, llm_judge=judge)
 
     results = {}
-
     for name, pair in DATASET.items():
         out = imm.score(pair["source"], pair["target"])
-
         results[name] = out
 
         print(f"\n=== {name} ===")
         print(f"S: {out['S']:.3f}")
         print(f"J: {out['J']:.3f}")
         print(f"IMM: {out['IMM']:.3f}")
-        print("Judge explanation:", out.get("J_explanation", ""))
+        print("J breakdown:", out["J_breakdown"])
 
     with open("results/imm_full_results.json", "w") as f:
         json.dump(results, f, indent=2)

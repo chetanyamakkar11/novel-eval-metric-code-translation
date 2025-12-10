@@ -1,64 +1,36 @@
-"""
-Static (no-model) code similarity capturing lexical + light structural cues.
-Returns a score in [0,1].
-"""
-from __future__ import annotations
-from typing import Dict
-from .utils import normalize_code, tokenize, ngrams, jaccard, f1, weighted_mean
+import ast
+import astor
+import re
 
-def _token_overlaps(src_tokens, trg_tokens) -> Dict[str, float]:
-    # 1-gram and 2-gram F1s
-    unis_src, unis_trg = ngrams(src_tokens,1), ngrams(trg_tokens,1)
-    bis_src,  bis_trg  = ngrams(src_tokens,2), ngrams(trg_tokens,2)
+class StaticSemanticScorer:
+    def __init__(self, k=5):
+        self.k = k
 
-    def prf(src_ngrams, trg_ngrams):
-        src_set, trg_set = set(src_ngrams), set(trg_ngrams)
-        tp = len(src_set & trg_set)
-        p = tp / max(1, len(trg_set))    # “hypothesis” = target translation
-        r = tp / max(1, len(src_set))
-        return p, r, f1(p, r)
+    def normalize(self, code):
+        try:
+            tree = ast.parse(code)
+            return astor.to_source(tree)
+        except Exception:
+            return re.sub(r"\s+", " ", code).strip()
 
-    p1, r1, f1_ = prf(unis_src, unis_trg)
-    p2, r2, f2_ = prf(bis_src,  bis_trg)
-    return {
-        "uni_f1": f1_, "bi_f1": f2_,
-        "uni_p": p1, "uni_r": r1, "bi_p": p2, "bi_r": r2
-    }
+    def score_once(self, src, trg):
+        src_norm = self.normalize(src)
+        trg_norm = self.normalize(trg)
 
-def _operator_overlap(src_tokens, trg_tokens) -> float:
-    ops = ["+","-","*","/","%","==","!=",">=","<=","<",">","and","or","&&","||"]
-    src = [t for t in src_tokens if t in ops]
-    trg = [t for t in trg_tokens if t in ops]
-    return jaccard(src, trg)
+        keywords = ["if", "else", "return", "for", "while"]
+        ops = ["+", "-", "*", "/", "%", "==", "!=", "<", ">"]
 
-def _keyword_overlap(src_tokens, trg_tokens) -> float:
-    keywords = {"if","else","for","while","return","try","catch","finally","switch","case","class","def","function"}
-    src = [t for t in src_tokens if t in keywords]
-    trg = [t for t in trg_tokens if t in keywords]
-    return jaccard(src, trg)
+        kw_src = sum(k in src_norm for k in keywords)
+        kw_trg = sum(k in trg_norm for k in keywords)
+        kw_score = min(kw_src, kw_trg) / max(kw_src, 1)
 
-def static_semantic_score(src_code: str, trg_code: str) -> Dict[str, float]:
-    """
-    Language-agnostic static score capturing n-gram similarity, operator usage,
-    and control-structure likeness. Produces a dict with sub-scores and
-    an overall 'S' in [0,1].
-    """
-    src_norm, trg_norm = normalize_code(src_code), normalize_code(trg_code)
-    src_tokens, trg_tokens = tokenize(src_norm), tokenize(trg_norm)
+        op_src = sum(o in src_norm for o in ops)
+        op_trg = sum(o in trg_norm for o in ops)
+        op_score = min(op_src, op_trg) / max(op_src, 1)
 
-    overlaps = _token_overlaps(src_tokens, trg_tokens)
-    op_j = _operator_overlap(src_tokens, trg_tokens)
-    kw_j = _keyword_overlap(src_tokens, trg_tokens)
+        len_score = min(len(src_norm), len(trg_norm)) / max(len(src_norm), 1)
 
-    # overall S: emphasize bi-gram (structure) plus operators & keywords
-    S = weighted_mean(
-        values=[overlaps["bi_f1"], overlaps["uni_f1"], op_j, kw_j],
-        weights=[0.45, 0.25, 0.15, 0.15],
-    )
-    return {
-        "S": S,
-        "uni_f1": overlaps["uni_f1"],
-        "bi_f1": overlaps["bi_f1"],
-        "op_jaccard": op_j,
-        "kw_jaccard": kw_j
-    }
+        return (kw_score + op_score + len_score) / 3
+
+    def score(self, src, trg):
+        return sum(self.score_once(src, trg) for _ in range(self.k)) / self.k

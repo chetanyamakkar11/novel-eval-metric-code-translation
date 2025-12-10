@@ -1,0 +1,38 @@
+{
+  "sum_to_n": {
+    "S": 1.0,
+    "J": 0.0,
+    "IMM": 0.5,
+    "J_breakdown": {
+      "functionality": 0.0,
+      "semantic_alignment": 0.0,
+      "idiomaticity": 0.0,
+      "risk": 0.0,
+      "final_j_score": 0.0
+    }
+  },
+  "buggy_sum": {
+    "S": 0.9492753623188405,
+    "J": 0.0,
+    "IMM": 0.47463768115942023,
+    "J_breakdown": {
+      "functionality": 0.0,
+      "semantic_alignment": 0.0,
+      "idiomaticity": 0.0,
+      "risk": 0.0,
+      "final_j_score": 0.0
+    }
+  },
+  "swapped_if": {
+    "S": 1.0,
+    "J": 0.0,
+    "IMM": 0.5,
+    "J_breakdown": {
+      "functionality": 0.0,
+      "semantic_alignment": 0.0,
+      "idiomaticity": 0.0,
+      "risk": 0.0,
+      "final_j_score": 0.0
+    }
+  }
+}
