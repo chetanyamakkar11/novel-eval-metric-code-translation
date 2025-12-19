@@ -1,38 +1,41 @@
 {
-  "sum_to_n": {
-    "S": 1.0,
-    "J": 0.0,
-    "IMM": 0.5,
+  "correct_sign": {
+    "S": 0.43636363636363634,
+    "J": 0.925,
+    "IMM": 0.6806818181818182,
     "J_breakdown": {
-      "functionality": 0.0,
-      "semantic_alignment": 0.0,
-      "idiomaticity": 0.0,
-      "risk": 0.0,
-      "final_j_score": 0.0
-    }
-  },
-  "buggy_sum": {
-    "S": 0.9492753623188405,
-    "J": 0.0,
-    "IMM": 0.47463768115942023,
-    "J_breakdown": {
-      "functionality": 0.0,
-      "semantic_alignment": 0.0,
-      "idiomaticity": 0.0,
-      "risk": 0.0,
-      "final_j_score": 0.0
+      "functionality": 1.0,
+      "semantic_alignment": 1.0,
+      "idiomaticity": 0.75,
+      "risk": 1.0,
+      "final_j_score": 0.925
     }
   },
   "swapped_if": {
-    "S": 1.0,
-    "J": 0.0,
-    "IMM": 0.5,
+    "S": 0.42272727272727273,
+    "J": 0.625,
+    "IMM": 0.5238636363636364,
     "J_breakdown": {
-      "functionality": 0.0,
+      "functionality": 1.0,
+      "semantic_alignment": 1.0,
+      "idiomaticity": 0.25,
+      "risk": 0.75,
+      "final_j_score": 0.625
+    }
+  },
+  "weird_but_correct": {
+    "S": 0.2065454545454545,
+    "J": 0.93,
+    "IMM": 0.5682727272727273,
+    "J_breakdown": {
+      "functionality": 1.0,
+      "idiomaticity": 0.75,
+      "readability": 1.0,
+      "unnecessary_artifacts": 0.75,
+      "safety": 1.0,
+      "final_j_score": 0.93,
       "semantic_alignment": 0.0,
-      "idiomaticity": 0.0,
-      "risk": 0.0,
-      "final_j_score": 0.0
+      "risk": 0.0
     }
   }
 }

@@ -1,98 +1,110 @@
-import subprocess
 import json
-import os
+import subprocess
 import re
+from pathlib import Path
+
 
 class OllamaJudge:
     """
-    LLM Judge using local Ollama models.
-    Ensures strict JSON output so the IMM metric can parse cleanly.
+    Local LLM judge using Ollama. Forces strict JSON output, extracts JSON reliably,
+    normalizes scores, and never crashes on text outside JSON.
     """
 
-    def __init__(self, model="mistral", rubric_path="scripts/docs/LLM_JUDGE_RUBRIC.md"):
+    def __init__(self, model="mistral", rubric_path=None):
         self.model = model
 
-        # Build absolute rubric path
-        self.rubric_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", rubric_path)
-        )
+        # Resolve rubric path
+        if rubric_path is None:
+            pkg_dir = Path(__file__).resolve().parent
+            rubric_path = pkg_dir.parent / "scripts" / "docs" / "LLM_JUDGE_RUBRIC.md"
 
-        with open(self.rubric_path, "r") as f:
-            self.rubric = f.read()
 
-        # Template with JSON-strict instructions
+        rubric_path = Path(rubric_path)
+
+        if not rubric_path.exists():
+            raise FileNotFoundError(f"Rubric file not found: {rubric_path}")
+
+        with open(rubric_path, "r") as f:
+            self.rubric_text = f.read()
+
+        # Strict JSON-only prompt
         self.prompt_template = """
-You are a strict evaluator for code translation quality.
+You are a strict code translation judge. You MUST output ONLY valid JSON.
+No explanations. No markdown. No commentary.
 
-Your job is to score how well the TARGET code preserves the behavior,
-logic, semantics, and idiomatic quality of the SOURCE code.
+Here is your scoring rubric:
 
-Return ONLY valid JSON using this exact structure:
-{
-  "functionality": <float 0-1>,
-  "semantic_alignment": <float 0-1>,
-  "idiomaticity": <float 0-1>,
-  "risk": <float 0-1>,
-  "final_j_score": <float 0-1>,
-  "explanation": "<short explanation>"
-}
+{rubric_text}
+
+You will evaluate a source-target translation and respond ONLY with a JSON dictionary.
+Your JSON MUST have EXACTLY these fields (floats between 0 and 1):
+
+{{
+  "functionality": 0.0,
+  "semantic_alignment": 0.0,
+  "idiomaticity": 0.0,
+  "risk": 0.0,
+  "final_j_score": 0.0
+}}
 
 SOURCE CODE:
-{src}
+{source_code}
 
 TARGET CODE:
-{trg}
+{target_code}
 
-SCORING RUBRIC:
---------------------
-{rubric}
---------------------
-
-Again: respond with ONLY JSON. No surrounding text.
+Output ONLY the JSON object. No other text.
 """
 
-    def extract_json(self, text):
-        """
-        Extracts JSON even if model outputs extra text.
-        """
+    def _call_ollama(self, prompt: str) -> str:
+        """Call Ollama via subprocess and return raw string output."""
         try:
-            # Try direct JSON
-            return json.loads(text)
-        except:
-            pass
+            result = subprocess.run(
+                ["ollama", "run", self.model],
+                input=prompt.encode("utf-8"),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=120,
+            )
+        except FileNotFoundError:
+            raise RuntimeError("Ollama not installed or not in PATH.")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Ollama model timed out.")
 
-        # Fallback: extract { ... } substring
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(0))
-            except:
-                pass
+        return result.stdout.decode("utf-8")
 
-        # Total failure fallback
-        return {
-            "functionality": 0.0,
-            "semantic_alignment": 0.0,
-            "idiomaticity": 0.0,
-            "risk": 0.0,
-            "final_j_score": 0.0,
-            "explanation": "LLM output invalid JSON."
-        }
-
-    def score(self, src_code, trg_code):
+    def score(self, src: str, trg: str) -> dict:
+        """Generate prompt, call Ollama, extract JSON, normalize scores."""
         prompt = self.prompt_template.format(
-            src=src_code, trg=trg_code, rubric=self.rubric
+            rubric_text=self.rubric_text,
+            source_code=src,
+            target_code=trg,
         )
 
-        result = subprocess.run(
-            ["ollama", "run", self.model],
-            input=prompt.encode(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
+        raw_out = self._call_ollama(prompt)
 
-        raw = result.stdout.decode().strip()
-        # print("\n[DEBUG RAW OUTPUT]\n", raw, "\n")  # uncomment for debugging
+        # Extract JSON with regex
+        match = re.search(r"\{[\s\S]*\}", raw_out)
+        if not match:
+            print("Raw Ollama output:\n", raw_out)
+            raise RuntimeError("Judge did not return valid JSON.")
 
-        parsed = self.extract_json(raw)
+        json_text = match.group(0)
+
+        try:
+            parsed = json.loads(json_text)
+        except Exception as e:
+            print("Failed JSON text:\n", json_text)
+            print("\nFull output:\n", raw_out)
+            raise RuntimeError("JSON parsing failed.") from e
+
+        # Normalize missing fields
+        keys = ["functionality", "semantic_alignment", "idiomaticity", "risk", "final_j_score"]
+        for k in keys:
+            parsed[k] = float(parsed.get(k, 0.0))
+
+        # Clamp between 0 and 1
+        for k in keys:
+            parsed[k] = max(0.0, min(1.0, parsed[k]))
+
         return parsed
